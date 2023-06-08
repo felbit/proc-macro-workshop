@@ -30,6 +30,8 @@ pub fn derive(input: TokenStream) -> TokenStream {
             current_dir: Option<String>,
         }
 
+        use std::error::Error;
+
         impl #builder_struct_ident {
             pub fn executable(&mut self, executable: String) -> &mut Self {
                 self.executable = Some(executable);
@@ -49,6 +51,15 @@ pub fn derive(input: TokenStream) -> TokenStream {
             pub fn current_dir(&mut self, current_dir: String) -> &mut Self {
                 self.current_dir = Some(current_dir);
                 self
+            }
+
+            pub fn build(&mut self) -> Result<#struct_ident, Box<dyn Error>> {
+                Ok(#struct_ident {
+                    executable: self.executable.clone().ok_or("executable not set")?,
+                    args: self.args.clone().ok_or("args not set")?,
+                    env: self.env.clone().ok_or("env not set")?,
+                    current_dir: self.current_dir.clone().ok_or("current_dir not set")?,
+                })
             }
         }
     };
