@@ -1,7 +1,6 @@
 use proc_macro::TokenStream;
-use proc_macro2::Ident;
 use quote::quote;
-use syn::{self, DeriveInput};
+use syn::{self, DeriveInput, Ident};
 
 #[proc_macro_derive(Builder)]
 pub fn derive(input: TokenStream) -> TokenStream {
