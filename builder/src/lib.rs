@@ -1,64 +1,70 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{self, DeriveInput, Ident};
+use syn;
 
 #[proc_macro_derive(Builder)]
 pub fn derive(input: TokenStream) -> TokenStream {
-    let ast = syn::parse_macro_input!(input as DeriveInput);
+    let ast = syn::parse_macro_input!(input as syn::DeriveInput);
 
     let struct_ident = &ast.ident;
     let builder_struct_ident =
-        Ident::new(&format!("{}Builder", &struct_ident), struct_ident.span());
+        syn::Ident::new(&format!("{}Builder", &struct_ident), struct_ident.span());
+
+    let fields = if let syn::Data::Struct(syn::DataStruct {
+        fields: syn::Fields::Named(syn::FieldsNamed { ref named, .. }),
+        ..
+    }) = ast.data
+    {
+        named
+    } else {
+        panic!("!")
+    };
+
+    let option_fields = fields.iter().map(|field| {
+        let name = &field.ident;
+        let ty = &field.ty;
+        quote!(#name: std::option::Option<#ty>)
+    });
+
+    let builder_fns = fields.iter().map(|f| {
+        let name = &f.ident;
+        let ty = &f.ty;
+        quote! {
+            pub fn #name(&mut self, #name: #ty) -> &mut Self {
+                self.#name = Some(#name);
+                self
+            }
+        }
+    });
+
+    let build_vals = fields.iter().map(|f| {
+        let name = &f.ident;
+        quote!(#name: self.#name.clone().ok_or("#name not found")?)
+    });
+
+    let builder_defaults = fields.iter().map(|f| {
+        let name = &f.ident;
+        quote!(#name: None)
+    });
 
     let gen = quote! {
+        pub struct #builder_struct_ident {
+            #(#option_fields,)*
+        }
+        impl #builder_struct_ident {
+            #(#builder_fns)*
+
+            pub fn build(&mut self) -> Result<#struct_ident, Box<dyn ::std::error::Error>> {
+                Ok(#struct_ident {
+                    #(#build_vals,)*
+                })
+            }
+        }
         impl #struct_ident {
             pub fn builder() -> #builder_struct_ident {
                 #builder_struct_ident {
-                    executable: None,
-                    args: None,
-                    env: None,
-                    current_dir: None,
+                    #(#builder_defaults,)*
                 }
-            }
-        }
-
-        pub struct #builder_struct_ident {
-            executable: Option<String>,
-            args: Option<Vec<String>>,
-            env: Option<Vec<String>>,
-            current_dir: Option<String>,
-        }
-
-        use std::error::Error;
-
-        impl #builder_struct_ident {
-            pub fn executable(&mut self, executable: String) -> &mut Self {
-                self.executable = Some(executable);
-                self
-            }
-
-            pub fn args(&mut self, args: Vec<String>) -> &mut Self {
-                self.args = Some(args);
-                self
-            }
-
-            pub fn env(&mut self, env: Vec<String>) -> &mut Self {
-                self.env = Some(env);
-                self
-            }
-
-            pub fn current_dir(&mut self, current_dir: String) -> &mut Self {
-                self.current_dir = Some(current_dir);
-                self
-            }
-
-            pub fn build(&mut self) -> Result<#struct_ident, Box<dyn Error>> {
-                Ok(#struct_ident {
-                    executable: self.executable.clone().ok_or("executable not set")?,
-                    args: self.args.clone().ok_or("args not set")?,
-                    env: self.env.clone().ok_or("env not set")?,
-                    current_dir: self.current_dir.clone().ok_or("current_dir not set")?,
-                })
             }
         }
     };
