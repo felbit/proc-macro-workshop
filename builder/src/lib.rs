@@ -23,7 +23,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
     let option_fields = fields.iter().map(|f| {
         let name = &f.ident;
         let ty = &f.ty;
-        if ty_is_option(&f) {
+        if unwrap_option(&ty).is_some() {
             quote!(#name: #ty)
         } else {
             quote!(#name: std::option::Option<#ty>)
@@ -33,16 +33,18 @@ pub fn derive(input: TokenStream) -> TokenStream {
     let builder_methods = fields.iter().map(|f| {
         let name = &f.ident;
         let ty = &f.ty;
+        let inner_ty = &unwrap_option(&ty);
 
-        if ty_is_option(&f) {
-            let inner_ty = extract_inner_type_ident(&f).unwrap();
+        if let Some(ty) = inner_ty {
+            // here, ty is an Ident
             quote! {
-                pub fn #name(&mut self, #name: #inner_ty) -> &mut Self {
+                pub fn #name(&mut self, #name: #ty) -> &mut Self {
                     self.#name = Some(#name);
                     self
                 }
             }
         } else {
+            // here, ty is a Type
             quote! {
                 pub fn #name(&mut self, #name: #ty) -> &mut Self {
                     self.#name = Some(#name);
@@ -54,7 +56,7 @@ pub fn derive(input: TokenStream) -> TokenStream {
 
     let builder_build_method_values = fields.iter().map(|f| {
         let name = &f.ident;
-        if ty_is_option(&f) {
+        if unwrap_option(&f.ty).is_some() {
             quote!(#name: self.#name.clone())
         } else {
             quote!(#name: self.#name.clone().ok_or("#name not found")?)
@@ -90,15 +92,14 @@ pub fn derive(input: TokenStream) -> TokenStream {
     gen.into()
 }
 
-fn ty_is_option(f: &syn::Field) -> bool {
-    if let syn::Type::Path(ref p) = f.ty {
-        return p.path.segments.last().unwrap().ident.to_string() == "Option";
-    }
-    false
-}
+/// unwrap_option returns an std::option::Option<syn::Ident> for the inner type
+/// of the Option field if any; None if is not an Option field.
+fn unwrap_option(ty: &syn::Type) -> Option<syn::Ident> {
+    #![allow(unused_must_use)]
+    if let syn::Type::Path(ref p) = ty {
+        // Don't do this in production... 🤡
+        !(p.path.segments.last().unwrap().ident.to_string() == "Option") && return None;
 
-fn extract_inner_type_ident(f: &syn::Field) -> Option<syn::Ident> {
-    if let syn::Type::Path(ref p) = f.ty {
         let args = &p.path.segments.last().unwrap().arguments;
         if let syn::PathArguments::AngleBracketed(ref ab_args) = args {
             let arg = &ab_args.args.first().unwrap();
@@ -107,5 +108,6 @@ fn extract_inner_type_ident(f: &syn::Field) -> Option<syn::Ident> {
             }
         }
     }
+
     None
 }
